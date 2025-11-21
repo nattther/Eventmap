@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
   View,
@@ -11,6 +11,8 @@ import {
   ViewStyle,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import * as Location from 'expo-location';
+
 
 // ---- Types ----
 
@@ -119,15 +121,51 @@ const TopBar: React.FC<TopBarProps> = ({ mode, onToggleView, containerStyle }) =
 // ---- Écran Carte ----
 
 const MapScreen: React.FC<MapScreenProps> = ({ onToggleView, onOpenDetail }) => {
+  // région contrôlée par React Native
+  const [region, setRegion] = useState<Region>(INITIAL_REGION);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // Demande de permission foreground
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== 'granted') {
+          setLocationError('Permission localisation refusée');
+          // On garde la région par défaut (Lille)
+          return;
+        }
+
+        // Récupère la position actuelle
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy:
+            Platform.OS === 'android'
+              ? Location.Accuracy.Balanced
+              : Location.Accuracy.High,
+        });
+
+        // Centre la carte sur l'utilisateur
+        setRegion((prev) => ({
+          ...prev,
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        }));
+      } catch (error) {
+        console.warn('Erreur localisation :', error);
+        setLocationError('Impossible de récupérer la localisation');
+      }
+    })();
+  }, []);
+
   return (
     <View style={styles.mapScreen}>
       <MapView
         style={StyleSheet.absoluteFillObject}
-        initialRegion={INITIAL_REGION}
-        // Google Maps en provider
         provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-        // Si tu fais un dev build iOS, tu peux mettre directement :
-        // provider={PROVIDER_GOOGLE}
+        region={region}
+        onRegionChangeComplete={setRegion}
+        showsUserLocation
       >
         {MARKERS.map((marker) => (
           <Marker
@@ -152,10 +190,21 @@ const MapScreen: React.FC<MapScreenProps> = ({ onToggleView, onOpenDetail }) => 
         containerStyle={styles.topBarOverlay}
       />
 
+      {/* Barre bleue en bas pour ouvrir le détail */}
       <BottomHandle onPress={onOpenDetail} />
+
+      {/* Optionnel : afficher un petit message si erreur de permission */}
+      {locationError && (
+        <View style={{ position: 'absolute', bottom: 70, left: 16, right: 16 }}>
+          <Text style={{ color: '#e53935', textAlign: 'center' }}>
+            {locationError}
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
+
 
 // ---- Écran Liste ----
 

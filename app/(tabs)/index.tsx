@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
+import { MaterialIcons } from '@expo/vector-icons';
+
 
 
 // ---- Types ----
@@ -121,23 +123,23 @@ const TopBar: React.FC<TopBarProps> = ({ mode, onToggleView, containerStyle }) =
 // ---- Écran Carte ----
 
 const MapScreen: React.FC<MapScreenProps> = ({ onToggleView, onOpenDetail }) => {
-  // région contrôlée par React Native
   const [region, setRegion] = useState<Region>(INITIAL_REGION);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        // Demande de permission foreground
         const { status } = await Location.requestForegroundPermissionsAsync();
 
         if (status !== 'granted') {
           setLocationError('Permission localisation refusée');
-          // On garde la région par défaut (Lille)
           return;
         }
 
-        // Récupère la position actuelle
         const loc = await Location.getCurrentPositionAsync({
           accuracy:
             Platform.OS === 'android'
@@ -145,11 +147,14 @@ const MapScreen: React.FC<MapScreenProps> = ({ onToggleView, onOpenDetail }) => 
               : Location.Accuracy.High,
         });
 
-        // Centre la carte sur l'utilisateur
+        const { latitude, longitude } = loc.coords;
+
+        setUserLocation({ latitude, longitude });
+
         setRegion((prev) => ({
           ...prev,
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
+          latitude,
+          longitude,
         }));
       } catch (error) {
         console.warn('Erreur localisation :', error);
@@ -157,6 +162,40 @@ const MapScreen: React.FC<MapScreenProps> = ({ onToggleView, onOpenDetail }) => 
       }
     })();
   }, []);
+
+  const handleLocateMe = async () => {
+    try {
+      if (!userLocation) {
+        // Si on n'a pas encore de position en mémoire, on tente une nouvelle fois
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy:
+            Platform.OS === 'android'
+              ? Location.Accuracy.Balanced
+              : Location.Accuracy.High,
+        });
+
+        const { latitude, longitude } = loc.coords;
+        setUserLocation({ latitude, longitude });
+
+        setRegion((prev) => ({
+          ...prev,
+          latitude,
+          longitude,
+        }));
+        return;
+      }
+
+      // On recentre juste sur la dernière position connue
+      setRegion((prev) => ({
+        ...prev,
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+      }));
+    } catch (error) {
+      console.warn('Erreur locate me :', error);
+      setLocationError('Impossible de recentrer sur ta position');
+    }
+  };
 
   return (
     <View style={styles.mapScreen}>
@@ -193,7 +232,9 @@ const MapScreen: React.FC<MapScreenProps> = ({ onToggleView, onOpenDetail }) => 
       {/* Barre bleue en bas pour ouvrir le détail */}
       <BottomHandle onPress={onOpenDetail} />
 
-      {/* Optionnel : afficher un petit message si erreur de permission */}
+      {/* Bouton "me localiser" en bas à droite */}
+      <LocateMeButton onPress={handleLocateMe} />
+
       {locationError && (
         <View style={{ position: 'absolute', bottom: 70, left: 16, right: 16 }}>
           <Text style={{ color: '#e53935', textAlign: 'center' }}>
@@ -205,6 +246,16 @@ const MapScreen: React.FC<MapScreenProps> = ({ onToggleView, onOpenDetail }) => 
   );
 };
 
+
+const LocateMeButton: React.FC<{ onPress: () => void }> = ({ onPress }) => (
+  <TouchableOpacity
+    style={styles.locateMeButton}
+    activeOpacity={0.8}
+    onPress={onPress}
+  >
+    <MaterialIcons name="my-location" size={22} color="#1e88e5" />
+  </TouchableOpacity>
+);
 
 // ---- Écran Liste ----
 
@@ -305,6 +356,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+
+    locateMeButton: {
+    position: 'absolute',
+    bottom: 80,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+
+  
   // Map screen
   mapScreen: {
     flex: 1,

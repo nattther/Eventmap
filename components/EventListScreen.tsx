@@ -18,6 +18,8 @@ type EventListScreenProps = {
   events: Event[];
   onToggleView: () => void;
   onSelectEvent: (event: Event) => void;
+  searchQuery: string;                     // 🔹 nouvelle prop
+  onChangeSearch: (value: string) => void; // 🔹 nouvelle prop
 };
 
 type SortMode = 'distance' | 'time';
@@ -27,12 +29,13 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
   events,
   onToggleView,
   onSelectEvent,
+  searchQuery,
+  onChangeSearch,
 }) => {
   const [sortMode, setSortMode] = useState<SortMode>('distance');
-  const [searchQuery, setSearchQuery] = useState<string>('');
   const { userLocation, locationError } = useUserLocation();
 
-  // ➜ On injecte la distance calculée si on connaît la position de l'utilisateur
+  // ➜ On injecte la distance calculée si on connaît la position
   const eventsWithComputed: EventWithComputed[] = useMemo(() => {
     if (!userLocation) {
       return events;
@@ -53,7 +56,7 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
     });
   }, [events, userLocation]);
 
-  // ➜ Tri par distance réelle ou par horaire
+  // ➜ Tri (les events sont déjà filtrés par HomeScreen)
   const sortedEvents: EventWithComputed[] = useMemo(() => {
     const copy = [...eventsWithComputed];
 
@@ -69,20 +72,6 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
 
     return copy;
   }, [eventsWithComputed, sortMode]);
-
-  // ➜ Filtre par nom + lieu (ville, adresse, quartier)
-  const filteredEvents: EventWithComputed[] = useMemo(() => {
-    const query = searchQuery.trim();
-    if (!query) return sortedEvents;
-
-    const normalizedQuery = normalizeStringForSearch(query);
-
-    return sortedEvents.filter((event) => {
-      const haystack = `${event.title} ${event.locationLabel ?? ''}`;
-      const normalizedHaystack = normalizeStringForSearch(haystack);
-      return normalizedHaystack.includes(normalizedQuery);
-    });
-  }, [sortedEvents, searchQuery]);
 
   return (
     <View style={styles.listScreen}>
@@ -130,14 +119,14 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
         </View>
       </View>
 
-      {/* 🔹 Barre de recherche nom + lieu */}
+      {/* 🔹 Barre de recherche (nom + lieu) */}
       <View style={styles.searchWrapper}>
         <TextInput
           style={styles.searchInput}
           placeholder="Rechercher par nom ou lieu (ville, adresse, quartier)..."
           placeholderTextColor="#9e9e9e"
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={onChangeSearch}
           autoCorrect={false}
         />
       </View>
@@ -147,7 +136,7 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
       )}
 
       <ScrollView contentContainerStyle={styles.listContent}>
-        {filteredEvents.length === 0 ? (
+        {sortedEvents.length === 0 ? (
           <View style={styles.emptyStateWrapper}>
             <Text style={styles.emptyStateTitle}>Aucun événement trouvé</Text>
             <Text style={styles.emptyStateText}>
@@ -155,7 +144,7 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
             </Text>
           </View>
         ) : (
-          filteredEvents.map((event) => (
+          sortedEvents.map((event) => (
             <TouchableOpacity
               key={event.id}
               style={styles.eventCard}
@@ -185,15 +174,6 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
     </View>
   );
 };
-
-/**
- * Supprime les accents + met en minuscule pour une recherche plus tolérante
- */
-const normalizeStringForSearch = (value: string): string =>
-  value
-    .normalize('NFD') // décompose les accents
-    .replace(/[\u0300-\u036f]/g, '') // supprime les diacritiques
-    .toLowerCase();
 
 const parseTimeToMinutes = (time: string): number => {
   if (!time) return Number.MAX_SAFE_INTEGER;

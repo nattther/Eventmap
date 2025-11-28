@@ -6,6 +6,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Linking,
+  Platform,
 } from 'react-native';
 import type { Event } from '@/app/(tabs)';
 
@@ -14,71 +16,119 @@ type EventDetailSheetProps = {
   onClose: () => void;
 };
 
-export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClose }) => (
-  <View style={styles.sheetContainer}>
-    <View style={styles.sheetHeader}>
-      <View style={styles.sheetTopBarBackground}>
-        <View style={styles.sheetTopBarForeground} />
-      </View>
-      <TouchableOpacity onPress={onClose} style={styles.sheetCloseButton}>
-        <Text style={styles.sheetCloseText}>✕</Text>
-      </TouchableOpacity>
-    </View>
+export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClose }) => {
+  const handleOpenItinerary = async () => {
+    if (!event) return;
 
-    <ScrollView contentContainerStyle={styles.sheetContent}>
-      {event ? (
-        <>
-          {event.isFree && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>Gratuit</Text>
-            </View>
-          )}
+    const { latitude, longitude, title } = event;
+    const latLng = `${latitude},${longitude}`;
+    const label = encodeURIComponent(title);
 
-          <Text style={styles.detailTitle}>{event.title}</Text>
+    // URL native par plateforme
+    const urlAndroid = `geo:${latLng}?q=${latLng}(${label})`;
+    const urlIOS = `http://maps.apple.com/?daddr=${latLng}&q=${label}`;
+    // Fallback web (Google Maps)
+    const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${latLng}`;
 
-          <View style={styles.eventInfoRow}>
-            <Text style={styles.eventInfoLabel}>Horaire</Text>
-            <Text style={styles.eventInfoValue}>{event.time}</Text>
-          </View>
+    const url = Platform.select({
+      ios: urlIOS,
+      android: urlAndroid,
+      default: fallbackUrl,
+    }) ?? fallbackUrl;
 
-          <View style={styles.eventInfoRow}>
-            <Text style={styles.eventInfoLabel}>Distance</Text>
-            <Text style={styles.eventInfoValue}>{event.distance}</Text>
-          </View>
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (!canOpen) {
+        await Linking.openURL(fallbackUrl);
+        return;
+      }
+      await Linking.openURL(url);
+    } catch (error) {
+      console.warn('Erreur ouverture Maps :', error);
+      // En dernier recours, on essaie au moins le fallback
+      try {
+        await Linking.openURL(fallbackUrl);
+      } catch (fallbackError) {
+        console.warn('Erreur ouverture fallback Maps :', fallbackError);
+      }
+    }
+  };
 
-          {/* Photos placeholder */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.imagesRow}
-          >
-            {[1, 2, 3].map((index) => (
-              <View key={index} style={styles.imageCard}>
-                <View style={styles.imagePlaceholderIcon}>
-                  <Text style={styles.imagePlaceholderText}>🖼</Text>
-                </View>
-                <Text style={styles.imageCaption}>Photo {index}</Text>
-              </View>
-            ))}
-          </ScrollView>
-
-          <Text style={styles.sectionTitle}>Description</Text>
-          <Text style={styles.eventDescription}>
-            Ici tu pourras mettre la vraie description de l&apos;événement. Pour l&apos;instant
-            c&apos;est juste un texte de démo.
-          </Text>
-        </>
-      ) : (
-        <View style={styles.emptyStateWrapper}>
-          <Text style={styles.emptyStateTitle}>Aucun événement sélectionné</Text>
-          <Text style={styles.emptyStateText}>
-            Clique sur un événement sur la carte ou dans la liste pour voir les détails ici.
-          </Text>
+  return (
+    <View style={styles.sheetContainer}>
+      <View style={styles.sheetHeader}>
+        <View style={styles.sheetTopBarBackground}>
+          <View style={styles.sheetTopBarForeground} />
         </View>
-      )}
-    </ScrollView>
-  </View>
-);
+        <TouchableOpacity onPress={onClose} style={styles.sheetCloseButton}>
+          <Text style={styles.sheetCloseText}>✕</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.sheetContent}>
+        {event ? (
+          <>
+            {event.isFree && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>Gratuit</Text>
+              </View>
+            )}
+
+            <Text style={styles.detailTitle}>{event.title}</Text>
+
+            <View style={styles.eventInfoRow}>
+              <Text style={styles.eventInfoLabel}>Horaire</Text>
+              <Text style={styles.eventInfoValue}>{event.time}</Text>
+            </View>
+
+            <View style={styles.eventInfoRow}>
+              <Text style={styles.eventInfoLabel}>Distance</Text>
+              <Text style={styles.eventInfoValue}>{event.distance}</Text>
+            </View>
+
+            {/* 🔹 Bouton itinéraire */}
+            <TouchableOpacity
+              style={styles.itineraryButton}
+              activeOpacity={0.85}
+              onPress={handleOpenItinerary}
+            >
+              <Text style={styles.itineraryButtonText}>Voir l&apos;itinéraire</Text>
+            </TouchableOpacity>
+
+            {/* Photos placeholder */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.imagesRow}
+            >
+              {[1, 2, 3].map((index) => (
+                <View key={index} style={styles.imageCard}>
+                  <View style={styles.imagePlaceholderIcon}>
+                    <Text style={styles.imagePlaceholderText}>🖼</Text>
+                  </View>
+                  <Text style={styles.imageCaption}>Photo {index}</Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            <Text style={styles.sectionTitle}>Description</Text>
+            <Text style={styles.eventDescription}>
+              Ici tu pourras mettre la vraie description de l&apos;événement. Pour l&apos;instant
+              c&apos;est juste un texte de démo.
+            </Text>
+          </>
+        ) : (
+          <View style={styles.emptyStateWrapper}>
+            <Text style={styles.emptyStateTitle}>Aucun événement sélectionné</Text>
+            <Text style={styles.emptyStateText}>
+              Clique sur un événement sur la carte ou dans la liste pour voir les détails ici.
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   sheetContainer: {
@@ -163,6 +213,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#333333',
+  },
+
+  // 🔹 Styles bouton itinéraire
+  itineraryButton: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: '#1e88e5',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  itineraryButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#ffffff',
   },
 
   // Images

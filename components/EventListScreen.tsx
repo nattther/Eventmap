@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
 } from 'react-native';
 
 import { TopBar } from './TopBar';
@@ -28,9 +29,10 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
   onSelectEvent,
 }) => {
   const [sortMode, setSortMode] = useState<SortMode>('distance');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const { userLocation, locationError } = useUserLocation();
 
-  // On injecte la distance calculée si on connaît la position de l'utilisateur
+  // ➜ On injecte la distance calculée si on connaît la position de l'utilisateur
   const eventsWithComputed: EventWithComputed[] = useMemo(() => {
     if (!userLocation) {
       return events;
@@ -51,7 +53,7 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
     });
   }, [events, userLocation]);
 
-  // Tri par distance réelle ou par horaire
+  // ➜ Tri par distance réelle ou par horaire
   const sortedEvents: EventWithComputed[] = useMemo(() => {
     const copy = [...eventsWithComputed];
 
@@ -68,11 +70,25 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
     return copy;
   }, [eventsWithComputed, sortMode]);
 
+  // ➜ Filtre par nom + lieu (ville, adresse, quartier)
+  const filteredEvents: EventWithComputed[] = useMemo(() => {
+    const query = searchQuery.trim();
+    if (!query) return sortedEvents;
+
+    const normalizedQuery = normalizeStringForSearch(query);
+
+    return sortedEvents.filter((event) => {
+      const haystack = `${event.title} ${event.locationLabel ?? ''}`;
+      const normalizedHaystack = normalizeStringForSearch(haystack);
+      return normalizedHaystack.includes(normalizedQuery);
+    });
+  }, [sortedEvents, searchQuery]);
+
   return (
     <View style={styles.listScreen}>
       <TopBar mode={'list' as ViewMode} onToggleView={onToggleView} />
 
-      {/* Barre de tri */}
+      {/* 🔹 Barre de tri */}
       <View style={styles.sortToggleRow}>
         <Text style={styles.sortLabel}>Trier par</Text>
         <View style={styles.sortButtonsContainer}>
@@ -114,41 +130,71 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
         </View>
       </View>
 
+      {/* 🔹 Barre de recherche nom + lieu */}
+      <View style={styles.searchWrapper}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Rechercher par nom ou lieu (ville, adresse, quartier)..."
+          placeholderTextColor="#9e9e9e"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCorrect={false}
+        />
+      </View>
+
       {locationError && (
         <Text style={styles.locationErrorText}>{locationError}</Text>
       )}
 
       <ScrollView contentContainerStyle={styles.listContent}>
-        {sortedEvents.map((event) => (
-          <TouchableOpacity
-            key={event.id}
-            style={styles.eventCard}
-            activeOpacity={0.8}
-            onPress={() => onSelectEvent(event)}
-          >
-            <View style={styles.eventCardHeader}>
-              {event.isFree && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>Gratuit</Text>
-                </View>
-              )}
-              <Text style={styles.eventCardTitle}>{event.title}</Text>
-            </View>
-            <Text style={styles.eventCardInfo}>Horaire : {event.time}</Text>
-            <Text style={styles.eventCardInfo}>
-              Distance :{' '}
-              {event.computedDistanceMeters != null
-                ? formatDistance(event.computedDistanceMeters)
-                : event.distance}
+        {filteredEvents.length === 0 ? (
+          <View style={styles.emptyStateWrapper}>
+            <Text style={styles.emptyStateTitle}>Aucun événement trouvé</Text>
+            <Text style={styles.emptyStateText}>
+              Essaie un autre nom ou un autre lieu.
             </Text>
-          </TouchableOpacity>
-        ))}
+          </View>
+        ) : (
+          filteredEvents.map((event) => (
+            <TouchableOpacity
+              key={event.id}
+              style={styles.eventCard}
+              activeOpacity={0.8}
+              onPress={() => onSelectEvent(event)}
+            >
+              <View style={styles.eventCardHeader}>
+                {event.isFree && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>Gratuit</Text>
+                  </View>
+                )}
+                <Text style={styles.eventCardTitle}>{event.title}</Text>
+              </View>
+              <Text style={styles.eventCardInfo}>Horaire : {event.time}</Text>
+              <Text style={styles.eventCardInfo}>Lieu : {event.locationLabel}</Text>
+              <Text style={styles.eventCardInfo}>
+                Distance :{' '}
+                {event.computedDistanceMeters != null
+                  ? formatDistance(event.computedDistanceMeters)
+                  : event.distance}
+              </Text>
+            </TouchableOpacity>
+          ))
+        )}
       </ScrollView>
     </View>
   );
 };
 
-// "18:00" -> minutes depuis minuit
+/**
+ * Supprime les accents + met en minuscule pour une recherche plus tolérante
+ */
+const normalizeStringForSearch = (value: string): string =>
+  value
+    .normalize('NFD') // décompose les accents
+    .replace(/[\u0300-\u036f]/g, '') // supprime les diacritiques
+    .toLowerCase();
+
 const parseTimeToMinutes = (time: string): number => {
   if (!time) return Number.MAX_SAFE_INTEGER;
 
@@ -173,6 +219,8 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     gap: 12,
   },
+
+  // Cartes d'événements
   eventCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
@@ -220,7 +268,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 4,
-    paddingBottom: 8,
+    paddingBottom: 4,
   },
   sortLabel: {
     fontSize: 13,
@@ -249,11 +297,45 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
+  // Recherche
+  searchWrapper: {
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  searchInput: {
+    height: 38,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    paddingHorizontal: 14,
+    fontSize: 13,
+    backgroundColor: '#fafafa',
+  },
+
   locationErrorText: {
     fontSize: 12,
     color: '#e53935',
     textAlign: 'center',
     paddingHorizontal: 20,
     marginBottom: 4,
+  },
+
+  // Empty state
+  emptyStateWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 40,
+    gap: 8,
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#222222',
+  },
+  emptyStateText: {
+    fontSize: 13,
+    color: '#555555',
+    textAlign: 'center',
   },
 });

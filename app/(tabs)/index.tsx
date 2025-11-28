@@ -7,7 +7,7 @@ import { EventListScreen } from '@/components/EventListScreen';
 import { EventDetailSheet } from '@/components/EventDetailSheet';
 
 export type ViewMode = 'map' | 'list';
-
+// app/(tabs)/index.tsx
 export type Event = {
   id: string;
   title: string;
@@ -16,6 +16,7 @@ export type Event = {
   latitude: number;
   longitude: number;
   isFree: boolean;
+  locationLabel: string; 
 };
 
 const EVENTS: Event[] = [
@@ -27,6 +28,7 @@ const EVENTS: Event[] = [
     latitude: 50.6375,
     longitude: 3.0625,
     isFree: true,
+    locationLabel: 'Lille ',
   },
   {
     id: '2',
@@ -36,6 +38,7 @@ const EVENTS: Event[] = [
     latitude: 50.6385,
     longitude: 3.067,
     isFree: true,
+    locationLabel: 'Lille ',
   },
   {
     id: '3',
@@ -45,6 +48,17 @@ const EVENTS: Event[] = [
     latitude: 50.636,
     longitude: 3.0705,
     isFree: false,
+    locationLabel: 'Lille',
+  },
+    {
+    id: '4',
+    title: 'Test Paris',
+    time: '11:00',
+    distance: '1800 m',
+    latitude: 350.636,
+    longitude: 13.0705,
+    isFree: false,
+    locationLabel: 'Paris',
   },
 ];
 

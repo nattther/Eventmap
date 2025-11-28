@@ -1,50 +1,43 @@
-# Welcome to your Expo app 👋
+# Eventmap 📍
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Eventmap est une application mobile (Expo / React Native) permettant de :
 
-## Get started
+- voir les événements autour de soi sur une carte et une liste,
+- filtrer les événements par nom et lieu (ville, quartier, adresse),
+- afficher la distance entre l’utilisateur et chaque événement,
+- permettre aux partenaires (organisateurs) de créer et gérer leurs événements.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## Comment lancer le projet avec Expo
 
-2. Start the app
+L’app est prête : aucune configuration d’API n’est nécessaire pour tester en local.
 
-   ```bash
-   npx expo start
-   ```
+1️⃣ Cloner le projet  
+git clone https://github.com/nattther/Eventmap.git  
+cd Eventmap
 
-In the output, you'll find options to open the app in a
+2️⃣ Installer les dépendances  
+npm install  
+# ou  
+yarn install
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+3️⃣ Lancer Expo  
+npm run start  
+# ou  
+npx expo start
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+4️⃣ Ouvrir l’application  
+- Scanner le QR Code avec Expo Go (Android / iOS)  
+- ou taper `a` pour ouvrir un émulateur Android  
+- ou taper `i` pour ouvrir un simulateur iOS
 
-## Get a fresh project
+---
 
-When you're ready, run:
+## Stack technique
 
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- Expo / React Native  
+- TypeScript  
+- Firebase (Auth + Firestore)  
+- React Native Maps  
+- Géolocalisation + calculs de distance (Haversine)

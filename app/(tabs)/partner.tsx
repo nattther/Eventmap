@@ -12,13 +12,15 @@ import {
   Alert,
 } from 'react-native';
 
-
 import {
   subscribeToPartnerEvents,
   createEventForPartner,
   type EventDoc,
 } from '@/services/eventsService';
 import { useAuth } from '@/context/AuthContext';
+import { buildFullAddressForGeocoding, geocodeAddressToLatLng } from '@/utils/geocoding';
+
+
 
 type AuthMode = 'login' | 'register';
 
@@ -380,26 +382,52 @@ const PartnerProfileScreen: React.FC = () => {
         ? Number.parseFloat(newPriceText.replace(',', '.')) || 0
         : 0;
 
+    const title = newTitle.trim();
+    const description = newDescription.trim();
+    const date = newDate.trim();
+    const startTime = newStartTime.trim();
+    const endTime = newEndTime.trim() || undefined;
+    const category = newCategory.trim() || undefined;
+    const venueName = eventVenueName.trim();
+    const venueAddress = eventVenueAddress.trim();
+    const venueCity = eventVenueCity.trim();
+    const venueZip = eventVenueZip.trim();
+
     try {
       setIsCreating(true);
 
+      // 1️⃣ Construire l'adresse complète pour l'API
+      const fullAddress = buildFullAddressForGeocoding({
+        venueName,
+        venueAddress,
+        venueCity,
+        venueZip,
+      });
+
+      // 2️⃣ Géocodage via Google (lat/lng)
+      const { latitude, longitude } = await geocodeAddressToLatLng(fullAddress);
+
+      // 3️⃣ Création dans Firestore AVEC les coordonnées
       await createEventForPartner(user, {
-        title: newTitle.trim(),
-        description: newDescription.trim(),
-        date: newDate.trim(),
-        startTime: newStartTime.trim(),
-        endTime: newEndTime.trim() || undefined,
-        category: newCategory.trim() || undefined,
+        title,
+        description,
+        date,
+        startTime,
+        endTime,
+        category,
         capacity,
         price,
         currency: 'EUR',
         isFree: newIsFree,
-        venueName: eventVenueName.trim(),
-        venueAddress: eventVenueAddress.trim(),
-        venueCity: eventVenueCity.trim(),
-        venueZip: eventVenueZip.trim(),
+        venueName,
+        venueAddress,
+        venueCity,
+        venueZip,
+        latitude,
+        longitude,
       });
 
+      // 4️⃣ Reset du formulaire
       setNewTitle('');
       setNewDescription('');
       setNewCategory('');
@@ -408,10 +436,11 @@ const PartnerProfileScreen: React.FC = () => {
       setNewIsFree(true);
     } catch (error: any) {
       console.warn('Erreur création événement :', error);
+
       Alert.alert(
         'Erreur',
         error?.message ??
-          "Impossible de créer l'événement. Vérifie ton profil et ta connexion.",
+          "Impossible de créer l'événement. Vérifie l'adresse, ton profil et ta connexion.",
       );
     } finally {
       setIsCreating(false);

@@ -69,6 +69,16 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClo
     }
   };
 
+  const formattedDateTime = useMemo(() => {
+    if (!event) return null;
+    if (!event.date && !event.time) return null;
+
+    if (!event.date) return `À ${event.time}`;
+    if (!event.time || event.time === '—') return `Le ${event.date}`;
+
+    return `Le ${event.date} à ${event.time}`;
+  }, [event]);
+
   return (
     <View style={styles.sheetContainer}>
       <View style={styles.sheetHeader}>
@@ -91,9 +101,22 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClo
 
             <Text style={styles.detailTitle}>{event.title}</Text>
 
+            {formattedDateTime && (
+              <View style={styles.eventInfoRow}>
+                <Text style={styles.eventInfoLabel}>Quand</Text>
+                <Text style={styles.eventInfoValue}>{formattedDateTime}</Text>
+              </View>
+            )}
+
             <View style={styles.eventInfoRow}>
-              <Text style={styles.eventInfoLabel}>Horaire</Text>
-              <Text style={styles.eventInfoValue}>{event.time}</Text>
+              <Text style={styles.eventInfoLabel}>Lieu</Text>
+              <Text style={styles.eventInfoValue}>
+                {event.venueName}
+                {'\n'}
+                {event.venueAddress}
+                {'\n'}
+                {event.venueZip} {event.venueCity}
+              </Text>
             </View>
 
             <View style={styles.eventInfoRow}>
@@ -103,7 +126,33 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClo
               </Text>
             </View>
 
-            {/* Bouton itinéraire */}
+            {event.category && (
+              <View style={styles.eventInfoRow}>
+                <Text style={styles.eventInfoLabel}>Catégorie</Text>
+                <Text style={styles.eventInfoValue}>{event.category}</Text>
+              </View>
+            )}
+
+            <View style={styles.eventInfoRow}>
+              <Text style={styles.eventInfoLabel}>Prix</Text>
+              <Text style={styles.eventInfoValue}>
+                {event.isFree
+                  ? 'Gratuit'
+                  : event.price != null
+                  ? `${event.price} €`
+                  : '—'}
+              </Text>
+            </View>
+
+            {event.capacity && (
+              <View style={styles.eventInfoRow}>
+                <Text style={styles.eventInfoLabel}>Capacité</Text>
+                <Text style={styles.eventInfoValue}>
+                  {event.capacity} personnes
+                </Text>
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.itineraryButton}
               activeOpacity={0.85}
@@ -130,8 +179,9 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClo
 
             <Text style={styles.sectionTitle}>Description</Text>
             <Text style={styles.eventDescription}>
-              Ici tu pourras mettre la vraie description de l&apos;événement. Pour l&apos;instant
-              c&apos;est juste un texte de démo.
+              {event.description && event.description.trim().length > 0
+                ? event.description
+                : "L'organisateur n'a pas encore ajouté de description détaillée."}
             </Text>
           </>
         ) : (
@@ -230,6 +280,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#333333',
+    textAlign: 'right',
   },
 
   // Bouton itinéraire

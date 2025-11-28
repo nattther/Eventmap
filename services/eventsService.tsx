@@ -8,6 +8,8 @@ import {
   serverTimestamp,
   type Unsubscribe,
   type Timestamp,
+  type QuerySnapshot,
+  type DocumentData,
 } from 'firebase/firestore';
 
 import { firestore } from '@/lib/firebase';
@@ -31,13 +33,16 @@ export type EventDoc = {
   currency?: string;    // ex: "EUR"
   capacity?: number;    // nb max de personnes
 
-  // Lieu (pré-rempli avec l'adresse du partenaire, mais modifiable pour chaque event)
+  // Lieu
   venueName: string;
   venueAddress: string;
   venueCity: string;
   venueZip: string;
 
-  // on garde imageUrl optionnel pour plus tard, mais on ne l'utilise pas pour l'instant
+  // Coordonnées éventuelles (si tu les ajoutes plus tard)
+  latitude?: number;
+  longitude?: number;
+
   imageUrl?: string;
 
   createdAt?: Timestamp;
@@ -62,11 +67,13 @@ type CreateEventParams = {
   venueAddress?: string;
   venueCity?: string;
   venueZip?: string;
+
+  latitude?: number;
+  longitude?: number;
 };
 
 /**
- * Crée un événement pour un partenaire en reprenant par défaut
- * l'adresse de son profil, tout en permettant d'overridder le lieu.
+ * Crée un événement pour un partenaire.
  */
 export const createEventForPartner = async (
   partner: AppUser,
@@ -90,7 +97,7 @@ export const createEventForPartner = async (
   const price = params.price ?? 0;
   const isFree = params.isFree ?? price <= 0;
 
-  const refCol = collection(firestore, EVENTS_COLLECTION);
+  const colRef = collection(firestore, EVENTS_COLLECTION);
 
   const payload = {
     partnerId: partner.uid,
@@ -110,14 +117,63 @@ export const createEventForPartner = async (
     venueCity,
     venueZip,
 
-    imageUrl: null, // on n'utilise pas encore les visuels
+    latitude:
+      typeof params.latitude === 'number' ? params.latitude : null,
+    longitude:
+      typeof params.longitude === 'number' ? params.longitude : null,
+
+    imageUrl: null,
 
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 
-  const docRef = await addDoc(refCol, payload);
+  const docRef = await addDoc(colRef, payload);
   return docRef.id;
+};
+
+/**
+ * Mapping générique d'un snapshot Firestore -> EventDoc[]
+ */
+const mapSnapshotToEventDocs = (
+  snapshot: QuerySnapshot<DocumentData>,
+): EventDoc[] => {
+  return snapshot.docs.map((docSnap) => {
+    const data = docSnap.data() as any;
+
+    return {
+      id: docSnap.id,
+      partnerId: data.partnerId,
+      title: data.title,
+      description: data.description ?? '',
+      category: data.category ?? undefined,
+      date: data.date ?? undefined,
+      startTime: data.startTime ?? undefined,
+      endTime: data.endTime ?? undefined,
+      capacity:
+        typeof data.capacity === 'number' ? data.capacity : undefined,
+      price: typeof data.price === 'number' ? data.price : undefined,
+      currency: data.currency ?? 'EUR',
+      isFree:
+        data.isFree ??
+        (typeof data.price === 'number' ? data.price <= 0 : true),
+
+      venueName: data.venueName,
+      venueAddress: data.venueAddress,
+      venueCity: data.venueCity,
+      venueZip: data.venueZip,
+
+      latitude:
+        typeof data.latitude === 'number' ? data.latitude : undefined,
+      longitude:
+        typeof data.longitude === 'number' ? data.longitude : undefined,
+
+      imageUrl: data.imageUrl ?? undefined,
+
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+    };
+  });
 };
 
 /**
@@ -131,38 +187,21 @@ export const subscribeToPartnerEvents = (
   const q = query(colRef, where('partnerId', '==', partnerId));
 
   return onSnapshot(q, (snapshot) => {
-    const items: EventDoc[] = snapshot.docs.map((docSnap) => {
-      const data = docSnap.data() as any;
+    onEvents(mapSnapshotToEventDocs(snapshot));
+  });
+};
 
-      return {
-        id: docSnap.id,
-        partnerId: data.partnerId,
-        title: data.title,
-        description: data.description ?? '',
-        category: data.category ?? undefined,
-        date: data.date ?? undefined,
-        startTime: data.startTime ?? undefined,
-        endTime: data.endTime ?? undefined,
-        capacity:
-          typeof data.capacity === 'number' ? data.capacity : undefined,
-        price: typeof data.price === 'number' ? data.price : undefined,
-        currency: data.currency ?? 'EUR',
-        isFree:
-          data.isFree ??
-          (typeof data.price === 'number' ? data.price <= 0 : true),
+/**
+ * Abonnement temps réel à TOUS les événements publics
+ * (utilisé sur la carte + liste).
+ */
+export const subscribeToAllEvents = (
+  onEvents: (events: EventDoc[]) => void,
+): Unsubscribe => {
+  const colRef = collection(firestore, EVENTS_COLLECTION);
+  const q = query(colRef); // pas de filtre pour l'instant
 
-        venueName: data.venueName,
-        venueAddress: data.venueAddress,
-        venueCity: data.venueCity,
-        venueZip: data.venueZip,
-
-        imageUrl: data.imageUrl ?? undefined,
-
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-      };
-    });
-
-    onEvents(items);
+  return onSnapshot(q, (snapshot) => {
+    onEvents(mapSnapshotToEventDocs(snapshot));
   });
 };

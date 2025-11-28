@@ -1,10 +1,11 @@
 // app/(tabs)/index.tsx
-import React, { useState, useMemo } from 'react';
-import { SafeAreaView, View, StyleSheet } from 'react-native';
+import React, { useState, useMemo, useEffect } from 'react';
+import { SafeAreaView, View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 
 import { MapScreen } from '@/components/MapScreen';
 import { EventListScreen } from '@/components/EventListScreen';
 import { EventDetailSheet } from '@/components/EventDetailSheet';
+import { subscribeToAllEvents, type EventDoc } from '@/services/eventsService';
 
 export type ViewMode = 'map' | 'list';
 
@@ -12,45 +13,27 @@ export type Event = {
   id: string;
   title: string;
   time: string;
-  distance: string;       // texte de fallback
+  date?: string;
+  description?: string;
+  category?: string;
+  price?: number;
+  capacity?: number;
+  isFree: boolean;
+
   latitude: number;
   longitude: number;
-  isFree: boolean;
-  locationLabel: string;  // 🔹 nouveau : ville / adresse / quartier
+
+  distance: string;       // texte de fallback
+  locationLabel: string;  // ville / nom lieu
+
+  venueName: string;
+  venueAddress: string;
+  venueCity: string;
+  venueZip: string;
 };
 
-const EVENTS: Event[] = [
-  {
-    id: '1',
-    title: 'Apéro au Network',
-    time: '18:00',
-    distance: '500 m',
-    latitude: 50.6375,
-    longitude: 3.0625,
-    isFree: true,
-    locationLabel: 'Lille - Vieux-Lille',
-  },
-  {
-    id: '2',
-    title: 'Concert Place des Halles',
-    time: '20:30',
-    distance: '1,2 km',
-    latitude: 50.6385,
-    longitude: 3.067,
-    isFree: true,
-    locationLabel: 'Lille - Centre',
-  },
-  {
-    id: '3',
-    title: 'Afterwork étudiants',
-    time: '19:00',
-    distance: '800 m',
-    latitude: 50.636,
-    longitude: 3.0705,
-    isFree: false,
-    locationLabel: 'Lille - Quartier étudiant',
-  },
-];
+const DEFAULT_LATITUDE = 50.637;
+const DEFAULT_LONGITUDE = 3.063;
 
 export default function HomeScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('map');
@@ -58,9 +41,61 @@ export default function HomeScreen() {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  const [rawEvents, setRawEvents] = useState<EventDoc[]>([]);
+  const [isLoadingEvents, setIsLoadingEvents] = useState<boolean>(true);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAllEvents((events) => {
+      setRawEvents(events);
+      setIsLoadingEvents(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const uiEvents: Event[] = useMemo(() => {
+    return rawEvents.map((e) => {
+      const locationLabelParts: string[] = [];
+      if (e.venueCity) {
+        locationLabelParts.push(e.venueCity);
+      }
+      if (e.venueName) {
+        locationLabelParts.push(e.venueName);
+      }
+      const locationLabel =
+        locationLabelParts.length > 0
+          ? locationLabelParts.join(' - ')
+          : e.venueAddress;
+
+      return {
+        id: e.id,
+        title: e.title,
+        time: e.startTime ?? '—',
+        date: e.date,
+        description: e.description ?? '',
+        category: e.category,
+        price: e.price,
+        capacity: e.capacity,
+        isFree: e.isFree,
+
+        latitude:
+          typeof e.latitude === 'number' ? e.latitude : DEFAULT_LATITUDE,
+        longitude:
+          typeof e.longitude === 'number' ? e.longitude : DEFAULT_LONGITUDE,
+
+        distance: 'Distance inconnue', // fallback si pas de géoloc calculée
+        locationLabel,
+
+        venueName: e.venueName,
+        venueAddress: e.venueAddress,
+        venueCity: e.venueCity,
+        venueZip: e.venueZip,
+      };
+    });
+  }, [rawEvents]);
+
   const handleToggleView = () => {
     setViewMode((prev) => (prev === 'map' ? 'list' : 'map'));
-    // Pour rester simple : on ferme le détail quand on change de vue
     setIsDetailOpen(false);
   };
 
@@ -87,36 +122,49 @@ export default function HomeScreen() {
     setSearchQuery(value);
   };
 
-  // 🔍 Filtre global : nom + lieu (ville / adresse / quartier)
+  // 🔍 Filtre global : nom + lieu (ville / nom du lieu)
   const filteredEvents = useMemo(() => {
     const query = searchQuery.trim();
-    if (!query) return EVENTS;
+    const source = uiEvents;
+
+    if (!query) return source;
 
     const normalizedQuery = normalizeStringForSearch(query);
 
-    return EVENTS.filter((event) => {
+    return source.filter((event) => {
       const haystack = `${event.title} ${event.locationLabel ?? ''}`;
       const normalizedHaystack = normalizeStringForSearch(haystack);
       return normalizedHaystack.includes(normalizedQuery);
     });
-  }, [searchQuery]);
+  }, [searchQuery, uiEvents]);
+
+  if (isLoadingEvents) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loaderWrapper}>
+          <ActivityIndicator />
+          <Text style={styles.loaderText}>Chargement des événements...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
         {viewMode === 'map' ? (
           <MapScreen
-            events={filteredEvents}                 // 🔹 seulement les events filtrés
+            events={filteredEvents}
             onToggleView={handleToggleView}
             onOpenDetail={handleOpenDetail}
             onSelectEvent={handleSelectEventFromMap}
           />
         ) : (
           <EventListScreen
-            events={filteredEvents}                 // 🔹 idem
+            events={filteredEvents}
             onToggleView={handleToggleView}
             onSelectEvent={handleSelectEventFromList}
-            searchQuery={searchQuery}              // 🔹 state remonté
+            searchQuery={searchQuery}
             onChangeSearch={handleChangeSearch}
           />
         )}
@@ -148,5 +196,15 @@ const styles = StyleSheet.create({
   },
   root: {
     flex: 1,
+  },
+  loaderWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loaderText: {
+    fontSize: 14,
+    color: '#555555',
   },
 });

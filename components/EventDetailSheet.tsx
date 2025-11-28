@@ -1,5 +1,5 @@
 // components/EventDetailSheet.tsx
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Platform,
 } from 'react-native';
 import type { Event } from '@/app/(tabs)';
+import { useUserLocation } from '@/hooks/use-user-location';
+import { calculateDistanceInMeters, formatDistance } from '@/utils/distance';
 
 type EventDetailSheetProps = {
   event: Event | null;
@@ -17,6 +19,21 @@ type EventDetailSheetProps = {
 };
 
 export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClose }) => {
+  const { userLocation } = useUserLocation();
+
+  const computedDistanceLabel = useMemo(() => {
+    if (!event || !userLocation) return null;
+
+    const distanceMeters = calculateDistanceInMeters(
+      userLocation.latitude,
+      userLocation.longitude,
+      event.latitude,
+      event.longitude,
+    );
+
+    return formatDistance(distanceMeters);
+  }, [event, userLocation]);
+
   const handleOpenItinerary = async () => {
     if (!event) return;
 
@@ -24,17 +41,16 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClo
     const latLng = `${latitude},${longitude}`;
     const label = encodeURIComponent(title);
 
-    // URL native par plateforme
     const urlAndroid = `geo:${latLng}?q=${latLng}(${label})`;
     const urlIOS = `http://maps.apple.com/?daddr=${latLng}&q=${label}`;
-    // Fallback web (Google Maps)
     const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${latLng}`;
 
-    const url = Platform.select({
-      ios: urlIOS,
-      android: urlAndroid,
-      default: fallbackUrl,
-    }) ?? fallbackUrl;
+    const url =
+      Platform.select({
+        ios: urlIOS,
+        android: urlAndroid,
+        default: fallbackUrl,
+      }) ?? fallbackUrl;
 
     try {
       const canOpen = await Linking.canOpenURL(url);
@@ -45,7 +61,6 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClo
       await Linking.openURL(url);
     } catch (error) {
       console.warn('Erreur ouverture Maps :', error);
-      // En dernier recours, on essaie au moins le fallback
       try {
         await Linking.openURL(fallbackUrl);
       } catch (fallbackError) {
@@ -83,10 +98,12 @@ export const EventDetailSheet: React.FC<EventDetailSheetProps> = ({ event, onClo
 
             <View style={styles.eventInfoRow}>
               <Text style={styles.eventInfoLabel}>Distance</Text>
-              <Text style={styles.eventInfoValue}>{event.distance}</Text>
+              <Text style={styles.eventInfoValue}>
+                {computedDistanceLabel ?? event.distance}
+              </Text>
             </View>
 
-            {/* 🔹 Bouton itinéraire */}
+            {/* Bouton itinéraire */}
             <TouchableOpacity
               style={styles.itineraryButton}
               activeOpacity={0.85}
@@ -215,7 +232,7 @@ const styles = StyleSheet.create({
     color: '#333333',
   },
 
-  // 🔹 Styles bouton itinéraire
+  // Bouton itinéraire
   itineraryButton: {
     marginTop: 10,
     alignSelf: 'flex-start',

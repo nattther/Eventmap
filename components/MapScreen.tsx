@@ -8,10 +8,11 @@ import {
   Platform,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
-import * as Location from 'expo-location';
 import { MaterialIcons } from '@expo/vector-icons';
+
 import { TopBar } from './TopBar';
 import type { ViewMode, Event } from '@/app/(tabs)';
+import { useUserLocation } from '@/hooks/use-user-location';
 
 type MapScreenProps = {
   events: Event[];
@@ -34,73 +35,31 @@ export const MapScreen: React.FC<MapScreenProps> = ({
   onSelectEvent,
 }) => {
   const [region, setRegion] = useState<Region>(INITIAL_REGION);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(
-    null,
-  );
 
+  const { userLocation, locationError, refreshLocation } = useUserLocation();
+
+  // Quand on récupère la position, on recentre la carte
   useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+    if (!userLocation) return;
 
-        if (status !== 'granted') {
-          setLocationError('Permission localisation refusée');
-          return;
-        }
-
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy:
-            Platform.OS === 'android'
-              ? Location.Accuracy.Balanced
-              : Location.Accuracy.High,
-        });
-
-        const { latitude, longitude } = loc.coords;
-        setUserLocation({ latitude, longitude });
-
-        setRegion((prev) => ({
-          ...prev,
-          latitude,
-          longitude,
-        }));
-      } catch (error) {
-        console.warn('Erreur localisation :', error);
-        setLocationError('Impossible de récupérer la localisation');
-      }
-    })();
-  }, []);
+    setRegion((prev) => ({
+      ...prev,
+      latitude: userLocation.latitude,
+      longitude: userLocation.longitude,
+    }));
+  }, [userLocation]);
 
   const handleLocateMe = async () => {
-    try {
-      if (!userLocation) {
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy:
-            Platform.OS === 'android'
-              ? Location.Accuracy.Balanced
-              : Location.Accuracy.High,
-        });
-
-        const { latitude, longitude } = loc.coords;
-        setUserLocation({ latitude, longitude });
-
-        setRegion((prev) => ({
-          ...prev,
-          latitude,
-          longitude,
-        }));
-        return;
-      }
-
-      setRegion((prev) => ({
-        ...prev,
-        latitude: userLocation.latitude,
-        longitude: userLocation.longitude,
-      }));
-    } catch (error) {
-      console.warn('Erreur locate me :', error);
-      setLocationError('Impossible de recentrer sur ta position');
+    if (!userLocation) {
+      await refreshLocation();
+      return;
     }
+
+    setRegion((prev) => ({
+      ...prev,
+      latitude: userLocation.latitude,
+      longitude: userLocation.longitude,
+    }));
   };
 
   return (
@@ -129,10 +88,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({
         containerStyle={styles.topBarOverlay}
       />
 
-      {/* Barre bleue en bas pour ouvrir le détail (sans sélectionner) */}
       <BottomHandle onPress={onOpenDetail} />
-
-      {/* Bouton "me localiser" en bas à droite */}
       <LocateMeButton onPress={handleLocateMe} />
 
       {locationError && (

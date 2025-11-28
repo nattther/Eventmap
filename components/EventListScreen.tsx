@@ -1,17 +1,17 @@
 // components/EventListScreen.tsx
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Platform,
 } from 'react-native';
-import * as Location from 'expo-location';
 
 import { TopBar } from './TopBar';
 import type { ViewMode, Event } from '@/app/(tabs)';
+import { useUserLocation } from '@/hooks/use-user-location';
+import { calculateDistanceInMeters, formatDistance } from '@/utils/distance';
 
 type EventListScreenProps = {
   events: Event[];
@@ -28,44 +28,11 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
   onSelectEvent,
 }) => {
   const [sortMode, setSortMode] = useState<SortMode>('distance');
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(
-    null,
-  );
-  const [locationError, setLocationError] = useState<string | null>(null);
+  const { userLocation, locationError } = useUserLocation();
 
-  // 🔹 Récupération de la position de l'utilisateur
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-
-        if (status !== 'granted') {
-          setLocationError('Permission localisation refusée');
-          return;
-        }
-
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy:
-            Platform.OS === 'android'
-              ? Location.Accuracy.Balanced
-              : Location.Accuracy.High,
-        });
-
-        setUserLocation({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        });
-      } catch (error) {
-        console.warn('Erreur localisation liste :', error);
-        setLocationError('Impossible de récupérer ta position');
-      }
-    })();
-  }, []);
-
-  // 🔹 On ajoute la distance calculée à chaque event (si position connue)
+  // On injecte la distance calculée si on connaît la position de l'utilisateur
   const eventsWithComputed: EventWithComputed[] = useMemo(() => {
     if (!userLocation) {
-      // Pas encore de position -> on renvoie les events tels quels
       return events;
     }
 
@@ -84,19 +51,8 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
     });
   }, [events, userLocation]);
 
-  // 🔹 Tri selon le mode sélectionné
+  // Tri par distance réelle ou par horaire
   const sortedEvents: EventWithComputed[] = useMemo(() => {
-    // Si on trie par distance mais qu'aucune distance n'est calculée,
-    // on ne touche pas à l'ordre d'origine.
-    if (sortMode === 'distance') {
-      const hasComputed = eventsWithComputed.some(
-        (event) => event.computedDistanceMeters != null,
-      );
-      if (!hasComputed) {
-        return eventsWithComputed;
-      }
-    }
-
     const copy = [...eventsWithComputed];
 
     copy.sort((a, b) => {
@@ -106,7 +62,6 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
         return da - db;
       }
 
-      // Tri par horaire (ex: "18:00", "20:30")
       return parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time);
     });
 
@@ -117,7 +72,7 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
     <View style={styles.listScreen}>
       <TopBar mode={'list' as ViewMode} onToggleView={onToggleView} />
 
-      {/* 🔹 Barre de tri */}
+      {/* Barre de tri */}
       <View style={styles.sortToggleRow}>
         <Text style={styles.sortLabel}>Trier par</Text>
         <View style={styles.sortButtonsContainer}>
@@ -193,56 +148,13 @@ export const EventListScreen: React.FC<EventListScreenProps> = ({
   );
 };
 
-/**
- * Haversine : distance entre 2 points (lat/lng) en mètres
- */
-const calculateDistanceInMeters = (
-  latitude1: number,
-  longitude1: number,
-  latitude2: number,
-  longitude2: number,
-): number => {
-  const toRad = (value: number) => (value * Math.PI) / 180;
-
-  const R = 6371e3; // rayon de la Terre en mètres
-  const φ1 = toRad(latitude1);
-  const φ2 = toRad(latitude2);
-  const Δφ = toRad(latitude2 - latitude1);
-  const Δλ = toRad(longitude2 - longitude1);
-
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
-};
-
-/**
- * Format : 123 m ou 1,2 km
- */
-const formatDistance = (meters: number): string => {
-  if (meters < 1000) {
-    return `${Math.round(meters)} m`;
-  }
-
-  const km = meters / 1000;
-  // virgule pour le français
-  return `${km.toFixed(1).replace('.', ',')} km`;
-};
-
-/**
- * "18:00" -> minutes depuis minuit (1080)
- */
+// "18:00" -> minutes depuis minuit
 const parseTimeToMinutes = (time: string): number => {
   if (!time) return Number.MAX_SAFE_INTEGER;
 
-  const parts = time.split(':');
-  if (parts.length < 2) return Number.MAX_SAFE_INTEGER;
-
-  const hours = Number.parseInt(parts[0], 10);
-  const minutes = Number.parseInt(parts[1], 10);
+  const [hoursStr, minutesStr] = time.split(':');
+  const hours = Number.parseInt(hoursStr, 10);
+  const minutes = Number.parseInt(minutesStr, 10);
 
   if (Number.isNaN(hours) || Number.isNaN(minutes)) {
     return Number.MAX_SAFE_INTEGER;
@@ -261,8 +173,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     gap: 12,
   },
-
-  // Cartes d'événements
   eventCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
@@ -303,7 +213,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
-  // 🔹 Barre de tri
+  // Tri
   sortToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',

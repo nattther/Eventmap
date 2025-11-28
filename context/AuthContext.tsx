@@ -1,3 +1,4 @@
+// contexts/AuthContext.tsx
 import React, {
   createContext,
   useCallback,
@@ -6,129 +7,285 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile as firebaseUpdateProfile,
+  type User as FirebaseUser,
+} from 'firebase/auth';
+import {
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 
-export type Partner = {
-  id: string;
-  name: string;
+import { auth, firestore } from '@/lib/firebase';
+
+export type UserRole = 'user' | 'partner';
+
+export type AppUser = {
+  uid: string;
   email: string;
-  // 🔹 nouveaux champs profil
+  displayName: string;
+  role: UserRole;
+
+  // 🔹 Adresse de base du lieu partenaire (sert pour tous ses événements)
   venueName?: string;
   venueAddress?: string;
   venueCity?: string;
   venueZip?: string;
-  avatarUrl?: string; // URI d'image locale ou URL distante
+
+  avatarUrl?: string;
 };
 
 type AuthContextValue = {
-  partner: Partner | null;
+  user: AppUser | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+
+  registerUser: (params: {
+    email: string;
+    password: string;
+    displayName: string;
+  }) => Promise<void>;
+
+  registerPartner: (params: {
+    email: string;
+    password: string;
+    displayName: string;
+    venueName: string;
+    venueAddress: string;
+    venueCity: string;
+    venueZip: string;
+  }) => Promise<void>;
+
+  login: (params: { email: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
-  updateProfile: (partial: Partial<Partner>) => Promise<void>; // 🔹 nouveau
+  updateProfile: (partial: Partial<AppUser>) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-const STORAGE_KEY = 'partner_auth';
 
 type AuthProviderProps = {
   children: ReactNode;
 };
 
+const USERS_COLLECTION = 'users';
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [partner, setPartner] = useState<Partner | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  const buildAppUserFromFirebase = useCallback(
+    (firebaseUser: FirebaseUser, userDocData?: any): AppUser => {
+      const base: AppUser = {
+        uid: firebaseUser.uid,
+        email: firebaseUser.email ?? userDocData?.email ?? '',
+        displayName:
+          userDocData?.displayName ??
+          firebaseUser.displayName ??
+          firebaseUser.email?.split('@')[0] ??
+          'Utilisateur',
+        role: (userDocData?.role as UserRole) ?? 'user',
+
+        venueName: userDocData?.venueName ?? undefined,
+        venueAddress: userDocData?.venueAddress ?? undefined,
+        venueCity: userDocData?.venueCity ?? undefined,
+        venueZip: userDocData?.venueZip ?? undefined,
+
+        avatarUrl: userDocData?.avatarUrl ?? undefined,
+      };
+
+      return base;
+    },
+    [],
+  );
+
+  // 🔹 Écoute globale de l'état de connexion Firebase
   useEffect(() => {
-    const loadPartner = async () => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        setUser(null);
+        setIsLoading(false);
+        return;
+      }
+
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Partner;
-          setPartner(parsed);
-        }
+        const ref = doc(firestore, USERS_COLLECTION, firebaseUser.uid);
+        const snap = await getDoc(ref);
+        const data = snap.exists() ? snap.data() : undefined;
+
+        const appUser = buildAppUserFromFirebase(firebaseUser, data);
+        setUser(appUser);
       } catch (error) {
-        console.warn('Erreur chargement partenaire :', error);
+        console.warn('Erreur chargement profil utilisateur :', error);
+        setUser(null);
       } finally {
         setIsLoading(false);
       }
-    };
+    });
 
-    void loadPartner();
-  }, []);
+    return () => unsubscribe();
+  }, [buildAppUserFromFirebase]);
 
-  useEffect(() => {
-    const persistPartner = async () => {
+  const createUserDocument = useCallback(
+    async (params: {
+      firebaseUser: FirebaseUser;
+      role: UserRole;
+      displayName: string;
+      extraProfile?: Partial<AppUser>;
+    }) => {
+      const { firebaseUser, role, displayName, extraProfile } = params;
+      const ref = doc(firestore, USERS_COLLECTION, firebaseUser.uid);
+
+      await setDoc(
+        ref,
+        {
+          email: firebaseUser.email,
+          displayName,
+          role,
+          venueName: extraProfile?.venueName ?? null,
+          venueAddress: extraProfile?.venueAddress ?? null,
+          venueCity: extraProfile?.venueCity ?? null,
+          venueZip: extraProfile?.venueZip ?? null,
+          avatarUrl: extraProfile?.avatarUrl ?? null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    },
+    [],
+  );
+
+  const registerBase = useCallback(
+    async (params: {
+      email: string;
+      password: string;
+      displayName: string;
+      role: UserRole;
+      extraProfile?: Partial<AppUser>;
+    }) => {
+      const { email, password, displayName, role, extraProfile } = params;
+      setIsLoading(true);
+
       try {
-        if (partner) {
-          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(partner));
-        } else {
-          await AsyncStorage.removeItem(STORAGE_KEY);
-        }
-      } catch (error) {
-        console.warn('Erreur persistance partenaire :', error);
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+
+        await firebaseUpdateProfile(cred.user, {
+          displayName,
+        });
+
+        await createUserDocument({
+          firebaseUser: cred.user,
+          role,
+          displayName,
+          extraProfile,
+        });
+        // onAuthStateChanged mettra `user` à jour
+      } finally {
+        setIsLoading(false);
       }
-    };
+    },
+    [createUserDocument],
+  );
 
-    void persistPartner();
-  }, [partner]);
+  const registerUser: AuthContextValue['registerUser'] = useCallback(
+    async ({ email, password, displayName }) => {
+      await registerBase({
+        email,
+        password,
+        displayName,
+        role: 'user',
+      });
+    },
+    [registerBase],
+  );
 
-  const login = useCallback(async (email: string, password: string) => {
+  const registerPartner: AuthContextValue['registerPartner'] = useCallback(
+    async ({ email, password, displayName, venueName, venueAddress, venueCity, venueZip }) => {
+      await registerBase({
+        email,
+        password,
+        displayName,
+        role: 'partner',
+        extraProfile: {
+          venueName,
+          venueAddress,
+          venueCity,
+          venueZip,
+        },
+      });
+    },
+    [registerBase],
+  );
+
+  const login: AuthContextValue['login'] = useCallback(async ({ email, password }) => {
     setIsLoading(true);
     try {
-      const fakePartner: Partner = {
-        id: `partner-${Date.now()}`,
-        email,
-        name: email.split('@')[0] || 'Partenaire',
-      };
-      setPartner(fakePartner);
+      await signInWithEmailAndPassword(auth, email, password);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  const register = useCallback(
-    async (name: string, email: string, password: string) => {
-      setIsLoading(true);
-      try {
-        const fakePartner: Partner = {
-          id: `partner-${Date.now()}`,
-          email,
-          name,
-        };
-        setPartner(fakePartner);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [],
-  );
-
-  const logout = useCallback(async () => {
-    setPartner(null);
+  const logout: AuthContextValue['logout'] = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await signOut(auth);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const updateProfile = useCallback(
-    async (partial: Partial<Partner>) => {
-      // Ici tu peux faire un PATCH /partners/:id côté backend,
-      // puis mettre à jour le state avec la réponse.
-      setPartner((prev) => {
-        if (!prev) return prev;
-        return { ...prev, ...partial };
-      });
+  const updateProfile: AuthContextValue['updateProfile'] = useCallback(
+    async (partial) => {
+      if (!user) return;
+
+      const ref = doc(firestore, USERS_COLLECTION, user.uid);
+
+      const payload: Record<string, unknown> = {
+        ...partial,
+        updatedAt: serverTimestamp(),
+      };
+
+      delete payload.uid;
+
+      await updateDoc(ref, payload);
+
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...partial,
+            }
+          : prev,
+      );
+
+      if (partial.displayName) {
+        const current = auth.currentUser;
+        if (current) {
+          await firebaseUpdateProfile(current, {
+            displayName: partial.displayName,
+          });
+        }
+      }
     },
-    [],
+    [user],
   );
 
   return (
     <AuthContext.Provider
       value={{
-        partner,
+        user,
         isLoading,
+        registerUser,
+        registerPartner,
         login,
-        register,
         logout,
         updateProfile,
       }}
